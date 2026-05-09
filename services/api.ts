@@ -603,10 +603,16 @@ async function apiRequest<T>(path: string, options: RequestInit = {}, requiresAu
     }
   }
 
-  const response = await fetch(`${API_BASE}${ensureAbsolutePath(path)}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${ensureAbsolutePath(path)}`, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ApiError(0, `Network request failed: ${msg}`, undefined, err);
+  }
 
   const contentType = response.headers.get("content-type") || "";
   let payload: unknown = null;
@@ -742,10 +748,14 @@ export function clearSessionUser(): void {
 }
 
 export async function login(payload: { email: string; password: string }): Promise<LoginResponse> {
-  const result = await apiRequest<{ token: string; user: BackendAuthUser }>("/auth/login", {
+  const result = await apiRequest<{ token?: string; user?: BackendAuthUser }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload),
   }, false);
+
+  if (!result || !result.user || !result.token) {
+    throw new ApiError(500, "Login failed: invalid response from server", undefined, result);
+  }
 
   return {
     token: result.token,
@@ -763,7 +773,10 @@ export async function apiSignup(payload: { name: string; email: string; password
 }
 
 export async function getCurrentUser(): Promise<AuthUser> {
-  const result = await apiRequest<{ user: BackendAuthUser }>("/auth/me");
+  const result = await apiRequest<{ user?: BackendAuthUser }>("/auth/me");
+  if (!result || !result.user) {
+    throw new ApiError(500, "Failed to fetch current user: response missing user object", undefined, result);
+  }
   return mapAuthUser(result.user);
 }
 
